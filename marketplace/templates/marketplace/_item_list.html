@@ -1,0 +1,121 @@
+{% if items %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+
+    {% for item in items %}
+      <article
+        class="group rounded-3xl border border-white/10 bg-white/5 p-5 shadow-lg
+               hover:bg-white/10 transition relative overflow-hidden"
+      >
+
+        <!-- Image / lien vers le détail -->
+        <a href="{% url 'item_detail' item.id %}" class="block">
+          {% with img=item.images.first %}
+            {% if img %}
+              <img
+                src="{{ img.image.url }}"
+                alt="{{ item.title }}"
+                class="w-full h-44 object-cover rounded-2xl mb-4 border border-white/10
+                       group-hover:scale-[1.02] transition"
+              />
+            {% else %}
+              <div
+                class="w-full h-44 rounded-2xl mb-4 bg-white/5 border border-white/10
+                       flex items-center justify-center text-slate-400 text-sm"
+              >
+                Pas d’image
+              </div>
+            {% endif %}
+          {% endwith %}
+        </a>
+
+        <!-- Titre + prix -->
+        <div class="flex items-start justify-between gap-3">
+          <h3 class="text-base font-semibold leading-6">
+            <a href="{% url 'item_detail' item.id %}" class="hover:underline">
+              {{ item.title }}
+            </a>
+          </h3>
+
+          <span
+            class="shrink-0 inline-flex items-center rounded-full
+                   bg-emerald-500/15 text-emerald-200
+                   border border-emerald-500/20 px-3 py-1 text-xs"
+          >
+            {{ item.total_cents|floatformat:0 }} cts
+          </span>
+        </div>
+
+        <!-- Description -->
+        <p class="mt-3 text-sm text-slate-300 line-clamp-3">
+          {{ item.description }}
+        </p>
+
+        <!-- Footer -->
+        <div class="mt-5 flex items-center justify-between gap-2">
+          <span class="text-xs text-slate-500">ID #{{ item.id }}</span>
+
+          <div class="flex items-center gap-2">
+
+            <!-- ========================= -->
+            <!-- Contacter le vendeur -->
+            <!-- ========================= -->
+            {% if user.is_authenticated %}
+              {% if item.seller_id != user.id %}
+                <a
+                  href="{% url 'start_conversation' item.id %}"
+                  class="inline-flex items-center px-4 py-2 rounded-2xl
+                         bg-white/10 hover:bg-white/20
+                         text-slate-100 font-semibold text-sm
+                         border border-white/10 transition"
+                >
+                  Contacter
+                </a>
+              {% else %}
+                <span
+                  class="inline-flex items-center px-3 py-2 rounded-2xl
+                         text-xs text-slate-400 border border-white/10"
+                >
+                  Ton annonce
+                </span>
+              {% endif %}
+            {% else %}
+              <a
+                href="{% url 'login' %}?next={% url 'item_detail' item.id %}"
+                class="inline-flex items-center px-4 py-2 rounded-2xl
+                       bg-white/10 hover:bg-white/20
+                       text-slate-100 font-semibold text-sm
+                       border border-white/10 transition"
+              >
+                Contacter
+              </a>
+            {% endif %}
+
+            <!-- ========================= -->
+            <!-- Acheter -->
+            <!-- ========================= -->
+            <a
+              href="{% url 'buy_item' item.id %}"
+              class="inline-flex items-center gap-1 px-4 py-2 rounded-2xl
+                     bg-gradient-to-r from-indigo-500 to-cyan-400
+                     text-slate-950 font-semibold text-sm
+                     hover:opacity-95 transition"
+            >
+              Acheter <span aria-hidden="true">→</span>
+            </a>
+
+          </div>
+        </div>
+
+      </article>
+    {% endfor %}
+
+  </div>
+
+{% else %}
+  <div class="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
+    <p class="text-slate-200 font-semibold">Aucune annonce disponible.</p>
+    <p class="mt-2 text-sm text-slate-400">
+      Ajoute des items via “Déposer” ou depuis l’admin.
+    </p>
+  </div>
+{% endif %}

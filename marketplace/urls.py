@@ -1,9 +1,9 @@
-# marketplace/urls.py
 from django.urls import path
-from .views import catalog, item_partial, item_create
+from . import views
 
 urlpatterns = [
-    path("", catalog, name="catalog"),
-    path("items/partial/", item_partial, name="item_partial"),
-    path("items/create/", item_create, name="item_create"),
+    path("", views.catalog, name="catalog"),
+    path("items/partial/", views.item_partial, name="item_partial"),
+    path("items/<int:item_id>/", views.item_detail, name="item_detail"),
+    path("items/create/", views.item_create, name="item_create"),
 ]

@@ -7,6 +7,7 @@ from django.http import HttpResponseForbidden, HttpResponse
 from marketplace.models import Item
 from .models import Order
 from notifications.tasks import notify_order_created
+from django.shortcuts import render
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -76,3 +77,6 @@ def payment_success(request):
 
 def payment_cancel(request):
     return HttpResponse("Paiement annulé ❌")
+
+def success(request):
+    return render(request, "orders/orders_success.html")

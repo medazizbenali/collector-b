@@ -2,73 +2,67 @@
 {% block title %}Déposer une annonce — Collector{% endblock %}
 
 {% block content %}
-<div class="max-w-xl mx-auto rounded-3xl border border-white/10 bg-white/5 p-8 shadow-xl">
+<section class="max-w-xl mx-auto rounded-3xl border border-white/10 bg-white/5 p-8 shadow-xl">
   <h1 class="text-2xl font-bold mb-6">Déposer une annonce</h1>
 
-  <form method="post" enctype="multipart/form-data" class="space-y-4">
+  {% if form.errors %}
+    <div class="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+      <p class="font-semibold">Merci de corriger les champs en erreur.</p>
+      {{ form.errors }}
+    </div>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data" class="space-y-5">
     {% csrf_token %}
 
     <div>
-      <label class="text-sm text-slate-300">Titre</label>
+      <label class="text-xs text-slate-400">Titre</label>
       {{ form.title }}
     </div>
 
     <div>
-      <label class="text-sm text-slate-300">Description</label>
+      <label class="text-xs text-slate-400">Description</label>
       {{ form.description }}
     </div>
 
     <div>
-      <label class="text-sm text-slate-300">Catégorie</label>
+      <label class="text-xs text-slate-400">Catégorie</label>
       {{ form.category }}
     </div>
 
     <div class="grid grid-cols-2 gap-3">
       <div>
-        <label class="text-sm text-slate-300">Prix (centimes)</label>
+        <label class="text-xs text-slate-400">Prix (centimes)</label>
         {{ form.price_cents }}
+        <p class="mt-1 text-xs text-slate-500">Ex: 1299 = 12,99€</p>
       </div>
+
       <div>
-        <label class="text-sm text-slate-300">Frais de port (centimes)</label>
+        <label class="text-xs text-slate-400">Frais de port (centimes)</label>
         {{ form.shipping_cents }}
+        <p class="mt-1 text-xs text-slate-500">0 si gratuit</p>
       </div>
     </div>
 
-    <!-- ✅ MULTI UPLOAD ICI -->
+    <!-- ✅ Upload images (HTML direct => fiable) -->
     <div>
-      <label class="text-sm text-slate-300">Photos (1 ou plusieurs)</label>
+      <label class="text-xs text-slate-400">Photos (1 ou plusieurs)</label>
       <input
         type="file"
         name="images"
         multiple
-        required
-        class="w-full mt-1 rounded-xl bg-slate-950/40 border border-white/10 px-4 py-2 text-white"
+        class="mt-2 w-full rounded-2xl bg-slate-950/40 border border-white/10 px-4 py-3 text-slate-100"
         accept="image/*"
       />
-      <p class="mt-1 text-xs text-slate-500">Maintiens Ctrl (ou Cmd) pour sélectionner plusieurs images.</p>
+      <p class="mt-1 text-xs text-slate-500">Tu peux sélectionner plusieurs images.</p>
     </div>
 
     <button
       type="submit"
-      class="w-full mt-4 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-400 py-2 font-semibold text-slate-950"
+      class="w-full mt-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-400 py-3 font-semibold text-slate-950"
     >
       Publier
     </button>
-
   </form>
-</div>
-
-<style>
-  /* un peu de style sur les champs django */
-  input[type="text"], input[type="number"], textarea, select {
-    width: 100%;
-    margin-top: .25rem;
-    border-radius: 0.75rem;
-    background: rgba(2,6,23,.4);
-    border: 1px solid rgba(255,255,255,.1);
-    padding: .5rem 1rem;
-    color: white;
-  }
-  textarea { min-height: 120px; }
-</style>
+</section>
 {% endblock %}

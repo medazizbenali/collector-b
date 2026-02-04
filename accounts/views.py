@@ -1,50 +1,46 @@
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import UserCreationForm
-from django.shortcuts import render, redirect
-from marketplace.models import Category
-from orders.models import Order
+from django.shortcuts import render
+
+from .models import UserProfile
+from .forms import ProfileInterestsForm
 from marketplace.models import Item
+from django.db.models import Q
 
 
-def register(request):
-    if request.user.is_authenticated:
-        return redirect("dashboard")
+@login_required
+def profile(request):
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
 
     if request.method == "POST":
-        form = UserCreationForm(request.POST)
+        form = ProfileInterestsForm(request.POST, instance=profile)
         if form.is_valid():
             form.save()
-            return redirect("login")
     else:
-        form = UserCreationForm()
+        form = ProfileInterestsForm(instance=profile)
 
-    return render(request, "accounts/register.html", {"form": form})
+    # ✅ Recommandations V1 (centres d’intérêt)
+    reco_v1 = Item.objects.filter(
+        category__in=profile.interests.all(),
+        status="APPROVED",
+        is_sold=False
+    ).distinct()[:6]
 
+    # ✅ Recommandations V2 (centres + parcours)
+    viewed_items = request.user.item_views.values_list("item__category", flat=True)
 
-@login_required
-def dashboard(request):
-    user = request.user
+    reco_v2 = Item.objects.filter(
+        Q(category__in=profile.interests.all()) |
+        Q(category__in=viewed_items),
+        status="APPROVED",
+        is_sold=False
+    ).distinct()[:6]
 
-    my_sales = Item.objects.filter(seller=user).order_by("-created_at")
-    my_orders = Order.objects.filter(buyer=user).order_by("-created_at")
-
-    return render(request, "accounts/dashboard.html", {
-        "my_sales": my_sales,
-        "my_orders": my_orders,
-    })
-
-
-@login_required
-def interests(request):
-    categories = Category.objects.all().order_by("name")
-    profile = request.user.profile
-
-    if request.method == "POST":
-        ids = request.POST.getlist("categories")
-        profile.interests.set(Category.objects.filter(id__in=ids))
-        return redirect("dashboard")
-
-    return render(request, "accounts/interests.html", {
-        "categories": categories,
-        "selected": set(profile.interests.values_list("id", flat=True)),
-    })
+    return render(
+        request,
+        "accounts/profile.html",
+        {
+            "form": form,
+            "reco_v1": reco_v1,
+            "reco_v2": reco_v2,
+        }
+    )

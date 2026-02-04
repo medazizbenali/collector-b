@@ -1,54 +1,25 @@
 {% extends "base.html" %}
-
-{% block title %}Collector — Catalogue{% endblock %}
+{% block title %}Catalogue — Collector{% endblock %}
 
 {% block content %}
+<section class="max-w-6xl mx-auto px-4">
 
-  <!-- Hero -->
-  <section class="rounded-3xl border border-white/10 bg-white/5 p-8 shadow-xl">
-    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-      <div>
-        <h1 class="text-3xl md:text-4xl font-bold tracking-tight">
-          Trouve des pièces rares, <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-300">en toute confiance</span>.
-        </h1>
-        <p class="mt-3 text-slate-300 max-w-2xl">
-          Catalogue des annonces, recherche instantanée, et expérience fluide grâce à HTMX.
-        </p>
-      </div>
-
-      <div class="flex gap-2">
-        <a href="/admin/" class="px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-sm">
-          Back-office
-        </a>
-        <a href="{% url 'item_create' %}" class="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-400 text-slate-950 font-semibold text-sm">
-          Déposer une annonce (demo)
-        </a>
-      </div>
+  <div class="mt-6">
+    <label class="text-xs text-slate-400">Rechercher</label>
+    <div class="mt-2 relative">
+      <input
+        type="text"
+        name="q"
+        placeholder="Ex: carte Pokémon, montre vintage, figurine..."
+        class="w-full rounded-2xl bg-slate-950/40 border border-white/10 px-4 py-3 text-slate-100 placeholder:text-slate-500"
+        hx-get="{% url 'item_partial' %}"
+        hx-trigger="keyup changed delay:300ms"
+        hx-target="#items-container"
+        hx-swap="innerHTML"
+      />
     </div>
+  </div>
 
-    <!-- Search -->
-    <div class="mt-6">
-      <label class="text-xs text-slate-400">Rechercher</label>
-      <div class="mt-2 relative">
-        <input
-          type="text"
-          name="q"
-          placeholder="Ex: carte Pokémon, montre vintage, figurine..."
-          class="w-full rounded-2xl bg-slate-950/40 border border-white/10 px-4 py-3 pr-12 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
-          hx-get="{% url 'item_partial' %}"
-          hx-trigger="keyup changed delay:300ms"
-          hx-target="#items-container"
-          hx-swap="innerHTML"
-        />
-        <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">⌘K</div>
-      </div>
-      <p class="mt-2 text-xs text-slate-500">
-        Astuce : tape quelques lettres, la liste se met à jour sans recharger la page.
-      </p>
-    </div>
-  </section>
-
-  <!-- Items -->
   <section class="mt-10">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-lg font-semibold">Annonces disponibles</h2>
@@ -56,8 +27,9 @@
     </div>
 
     <div id="items-container">
-      {% include "marketplace/_items_list.html" %}
+      {% include "marketplace/_item_list.html" %}
     </div>
   </section>
 
+</section>
 {% endblock %}

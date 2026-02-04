@@ -1,35 +1,79 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>{{ item.title }} – Collector</title>
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}{{ item.title }} — Collector{% endblock %}
 
-  <p><a href="/">← Retour au catalogue</a></p>
+{% block content %}
+<section class="max-w-4xl mx-auto">
 
-  <h1>{{ item.title }}</h1>
+  <div class="rounded-3xl border border-white/10 bg-white/5 shadow-xl overflow-hidden">
+    <div class="p-8">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-3xl font-bold">{{ item.title }}</h1>
+          <p class="mt-2 text-sm text-slate-400">Catégorie : {{ item.category }}</p>
+          <p class="mt-1 text-xs text-slate-500">Annonce #{{ item.id }}</p>
+        </div>
 
-  <p>{{ item.description }}</p>
+        <div class="text-right">
+          <div class="inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-200 border border-emerald-500/20 px-4 py-2 text-sm font-semibold">
+            {{ item.total_cents|floatformat:0 }} cts
+          </div>
+          <p class="mt-2 text-xs text-slate-400">Frais de port : {{ item.shipping_cents }} cts</p>
+        </div>
+      </div>
 
-  <p><strong>Prix :</strong> {{ item.price_cents }} centimes</p>
-  <p><strong>Vendeur :</strong> {{ item.seller.username }}</p>
+      <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
+          {% with img=item.images.first %}
+            {% if img %}
+              <img
+                src="{{ img.image.url }}"
+                alt="{{ item.title }}"
+                class="w-full h-80 object-cover rounded-2xl border border-white/10"
+              />
+            {% else %}
+              <div class="w-full h-80 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 text-sm">
+                Pas d’image
+              </div>
+            {% endif %}
+          {% endwith %}
+        </div>
 
-  <hr>
+        <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <h2 class="text-lg font-semibold">Description</h2>
+          <p class="mt-3 text-slate-300 whitespace-pre-line">{{ item.description }}</p>
 
-  {% if item.is_sold %}
-    <p style="color:red;"><strong>VENDU</strong></p>
-  {% else %}
-    <a href="/orders/buy/{{ item.id }}/">Acheter</a>
-  {% endif %}
+          <div class="mt-6 flex flex-col sm:flex-row gap-3">
+            <a
+              href="{% url 'buy_item' item.id %}"
+              class="inline-flex justify-center items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-400 text-slate-950 font-semibold text-sm hover:opacity-95"
+            >
+              Acheter <span aria-hidden="true">→</span>
+            </a>
 
-  <hr>
+            {% if user.is_authenticated %}
+              <a
+                href="{% url 'start_conversation' item.id %}"
+                class="inline-flex justify-center items-center gap-2 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-100 font-semibold text-sm border border-white/10"
+              >
+                Contacter le vendeur 💬
+              </a>
+            {% else %}
+              <a
+                href="{% url 'login' %}?next={% url 'item_detail' item.id %}"
+                class="inline-flex justify-center items-center gap-2 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-100 font-semibold text-sm border border-white/10"
+              >
+                Se connecter pour contacter 💬
+              </a>
+            {% endif %}
+          </div>
 
-  {% if user.is_authenticated %}
-    <p>Connecté en tant que <strong>{{ user.username }}</strong> — <a href="/logout/">Déconnexion</a></p>
-  {% else %}
-    <p><a href="/login/">Se connecter</a></p>
-  {% endif %}
+          <p class="mt-4 text-xs text-slate-500">
+            Vendeur : {{ item.seller.username }}
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
 
-</body>
-</html>
+</section>
+{% endblock %}

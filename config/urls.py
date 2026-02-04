@@ -7,13 +7,13 @@ from django.contrib.auth import views as auth_views
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # Auth
-    path("login/", auth_views.LoginView.as_view(template_name="accounts/login.html"), name="login"),
+    path("login/", auth_views.LoginView.as_view(template_name="login.html"), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
 
-    # Apps
     path("", include("marketplace.urls")),
     path("orders/", include("orders.urls")),
+    path("chat/", include("chat.urls")),
+    path("accounts/", include("accounts.urls")),
 ]
 
 if settings.DEBUG:

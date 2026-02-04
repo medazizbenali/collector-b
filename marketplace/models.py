@@ -1,4 +1,3 @@
-# marketplace/models.py
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -20,19 +19,16 @@ class Item(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
 
-    # ✅ TEMPORAIRE: null=True/blank=True pour migrer sans casse
     category = models.ForeignKey(
-        Category,
-        on_delete=models.PROTECT,
-        related_name="items",
-        null=True,
-        blank=True,
+        Category, on_delete=models.PROTECT, related_name="items"
     )
 
     price_cents = models.PositiveIntegerField()
     shipping_cents = models.PositiveIntegerField(default=0)
 
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
     is_sold = models.BooleanField(default=False)
 
     seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name="items")
@@ -43,12 +39,8 @@ class Item(models.Model):
     def total_cents(self):
         return self.price_cents + self.shipping_cents
 
-    @property
-    def price_eur(self):
-        return self.price_cents / 100
-
     def __str__(self):
-        return f"{self.title} ({self.status})"
+        return self.title
 
 
 class ItemImage(models.Model):
@@ -56,7 +48,7 @@ class ItemImage(models.Model):
     image = models.ImageField(upload_to="items/")
 
     def __str__(self):
-        return f"Image #{self.id} for Item#{self.item_id}"
+        return f"Image #{self.id} for Item #{self.item_id}"
 
 
 class PriceHistory(models.Model):
@@ -65,5 +57,12 @@ class PriceHistory(models.Model):
     new_price_cents = models.PositiveIntegerField()
     changed_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
-        return f"Item#{self.item_id}: {self.old_price_cents}->{self.new_price_cents}"
+
+# ✅ V2 – Parcours utilisateur (IMPORTANT)
+class ItemViewEvent(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

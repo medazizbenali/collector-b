@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Mes conversations{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Mes conversations</h1>
+
+<div class="space-y-3">
+  {% for c in conversations %}
+    <a class="block rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10"
+       href="{% url 'conversation_detail' c.id %}">
+      <div class="flex justify-between">
+        <div class="font-semibold">{{ c.item.title }}</div>
+        <div class="text-xs text-slate-400">{{ c.updated_at }}</div>
+      </div>
+      <div class="text-sm text-slate-300 mt-1">
+        {% if user.id == c.buyer_id %}
+          Vendeur: {{ c.seller.username }}
+        {% else %}
+          Acheteur: {{ c.buyer.username }}
+        {% endif %}
+      </div>
+    </a>
+  {% empty %}
+    <div class="rounded-2xl border border-white/10 bg-white/5 p-6">
+      Aucune conversation.
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -25,12 +25,22 @@
         </div>
       </div>
 
-      <nav class="flex items-center gap-3 text-sm">
+      <nav class="hidden md:flex items-center gap-3 text-sm">
         <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="{% url 'catalog' %}">Catalogue</a>
-        <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="{% url 'item_create' %}">Déposer</a>
 
         {% if user.is_authenticated %}
-          <span class="hidden sm:inline text-slate-300 text-xs">👤 {{ user.username }}</span>
+          <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="{% url 'item_create' %}">Déposer</a>
+
+          <!-- ✅ Onglet Messages -->
+          <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="{% url 'my_conversations' %}">
+            Messages
+          </a>
+
+          <span class="text-slate-300 text-xs">👤 {{ user.username }}</span>
+
+          <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="{% url 'profile' %}">
+            Mon profil
+          </a>
 
           <form method="post" action="{% url 'logout' %}">
             {% csrf_token %}
@@ -50,7 +60,7 @@
         <a class="px-3 py-2 rounded-xl hover:bg-white/10" href="/admin/">Admin</a>
       </nav>
 
-      <div class="hidden md:flex items-center gap-2">
+      <div class="flex items-center gap-2">
         <span class="hidden sm:inline text-xs text-slate-300">Mode démo</span>
         <div class="h-2.5 w-2.5 rounded-full bg-emerald-400"></div>
       </div>
