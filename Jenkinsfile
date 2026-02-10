@@ -37,6 +37,7 @@ DB_PORT=3306
 REDIS_URL=redis://redis:6379/0
 EOF
 
+          # Override CI: pas d'exposition de ports, pas de bind mounts
           cat > docker-compose.ci.yml <<'EOF'
 services:
   web:
@@ -45,6 +46,8 @@ services:
   worker:
     volumes: []
 EOF
+
+          docker compose version
         '''
       }
     }
@@ -53,35 +56,17 @@ EOF
       steps {
         sh '''
           set -eu
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          docker compose ps
+        '''
+      }
+    }
 
-          # IMPORTANT: workspace dans Jenkins conteneur != chemin sur la VM
-          WS_BASE="$(basename "$WORKSPACE")"
-          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
-
-          echo "Container WORKSPACE: $WORKSPACE"
-          echo "Host workspace:      $HOST_WS"
-          ls -la "$HOST_WS" | sed -n '1,120p'
-
-          if [ -f "$HOST_WS/docker-compose.yml" ]; then
-            BASE_COMPOSE="docker-compose.yml"
-          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
-            BASE_COMPOSE="docker-compose.yaml"
-          else
-            echo "No docker-compose file found in HOST_WS"
-            exit 1
-          fi
-
-          compose() {
-            docker run --rm \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$HOST_WS:/work" \
-              -w /work \
-              docker/compose:latest "$@"
-          }
-
-          compose version
-          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml up -d db redis
-          compose ps
+    stage('Build image') {
+      steps {
+        sh '''
+          set -eu
+          docker build -t ${APP_IMAGE} .
         '''
       }
     }
@@ -91,32 +76,17 @@ EOF
         sh '''
           set -eu
 
-          WS_BASE="$(basename "$WORKSPACE")"
-          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+          # Attendre MySQL (simple)
+          for i in $(seq 1 30); do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T db mysqladmin ping -h 127.0.0.1 -uroot --silent 2>/dev/null; then
+              echo "MySQL is ready"
+              break
+            fi
+            echo "Waiting MySQL... ($i/30)"
+            sleep 2
+          done
 
-          if [ -f "$HOST_WS/docker-compose.yml" ]; then
-            BASE_COMPOSE="docker-compose.yml"
-          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
-            BASE_COMPOSE="docker-compose.yaml"
-          else
-            echo "No docker-compose file found in HOST_WS"
-            exit 1
-          fi
-
-          compose() {
-            docker run --rm \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$HOST_WS:/work" \
-              -w /work \
-              docker/compose:latest "$@"
-          }
-
-          docker build -t ${APP_IMAGE} .
-
-          # Petite attente (si MySQL pas prêt on ajoutera un wait-for-db)
-          sleep 3
-
-          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml run --rm \
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -130,10 +100,7 @@ EOF
       steps {
         sh '''
           set -eu
-          WS_BASE="$(basename "$WORKSPACE")"
-          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
-
-          docker run --rm -v "$HOST_WS:/src" -w /src python:3.12-slim sh -lc "
+          docker run --rm -v "$PWD:/src" -w /src python:3.12-slim sh -lc "
             pip install --no-cache-dir bandit &&
             bandit -r . -x */migrations/* -ll
           "
@@ -145,10 +112,7 @@ EOF
       steps {
         sh '''
           set -eu
-          WS_BASE="$(basename "$WORKSPACE")"
-          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
-
-          docker run --rm -v "$HOST_WS:/work" -w /work aquasec/trivy:latest fs \
+          docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:latest fs \
             --scanners vuln,secret,config \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
@@ -169,30 +133,10 @@ EOF
       }
     }
 
-    stage('Test image (Smoke)') {
+    stage('Smoke test (container)') {
       steps {
         sh '''
           set -eu
-
-          WS_BASE="$(basename "$WORKSPACE")"
-          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
-
-          if [ -f "$HOST_WS/docker-compose.yml" ]; then
-            BASE_COMPOSE="docker-compose.yml"
-          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
-            BASE_COMPOSE="docker-compose.yaml"
-          else
-            echo "No docker-compose file found in HOST_WS"
-            exit 1
-          fi
-
-          compose() {
-            docker run --rm \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$HOST_WS:/work" \
-              -w /work \
-              docker/compose:latest "$@"
-          }
 
           cat > docker-compose.image.yml <<EOF
 services:
@@ -205,10 +149,10 @@ services:
       "
 EOF
 
-          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
-          compose ps
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
 
-          compose exec -T web python - <<'PY'
+          # Smoke via python dans web (localhost = conteneur web)
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml exec -T web python - <<'PY'
 import urllib.request, sys, time
 
 url = "http://localhost:8000/"
@@ -236,27 +180,8 @@ PY
     always {
       sh '''
         set +e
-
-        WS_BASE="$(basename "$WORKSPACE")"
-        HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
-
-        if [ -f "$HOST_WS/docker-compose.yml" ]; then
-          BASE_COMPOSE="docker-compose.yml"
-        elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
-          BASE_COMPOSE="docker-compose.yaml"
-        else
-          BASE_COMPOSE="docker-compose.yml"
-        fi
-
-        compose() {
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOST_WS:/work" \
-            -w /work \
-            docker/compose:latest "$@"
-        }
-
-        compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml down -v
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        rm -f docker-compose.image.yml docker-compose.ci.yml .env || true
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
