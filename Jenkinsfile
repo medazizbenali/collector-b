@@ -55,10 +55,17 @@ EOF
       steps {
         sh '''
           set -eu
-          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
 
-          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
-          $COMPOSE ps
+          compose() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$WORKSPACE:$WORKSPACE" \
+              -w "$WORKSPACE" \
+              docker/compose:latest "$@"
+          }
+
+          compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          compose ps
         '''
       }
     }
@@ -67,13 +74,24 @@ EOF
       steps {
         sh '''
           set -eu
-          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
+
+          compose() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$WORKSPACE:$WORKSPACE" \
+              -w "$WORKSPACE" \
+              docker/compose:latest "$@"
+          }
 
           # Build image depuis Dockerfile
           docker build -t ${APP_IMAGE} .
 
-          # Migrations + tests dans le service web (réseau compose => db/redis accessibles)
-          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          # (Optionnel) attendre un peu que MySQL démarre
+          # (Si ça bloque encore ensuite, on met un vrai wait-for-db)
+          sleep 3
+
+          # Migrations + tests dans le service web
+          compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -124,7 +142,14 @@ EOF
       steps {
         sh '''
           set -eu
-          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
+
+          compose() {
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$WORKSPACE:$WORKSPACE" \
+              -w "$WORKSPACE" \
+              docker/compose:latest "$@"
+          }
 
           # Override compose pour démarrer web depuis l'image buildée
           cat > docker-compose.image.yml <<EOF
@@ -138,11 +163,11 @@ services:
       "
 EOF
 
-          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
-          $COMPOSE ps
+          compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          compose ps
 
           # Smoke test HTTP via Python (dans le conteneur web)
-          $COMPOSE exec -T web python - <<'PY'
+          compose exec -T web python - <<'PY'
 import urllib.request, sys, time
 
 url = "http://localhost:8000/"
@@ -171,9 +196,16 @@ PY
     always {
       sh '''
         set +e
-        COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
 
-        $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml down -v
+        compose() {
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$WORKSPACE:$WORKSPACE" \
+            -w "$WORKSPACE" \
+            docker/compose:latest "$@"
+        }
+
+        compose -f docker-compose.yml -f docker-compose.ci.yml down -v
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
