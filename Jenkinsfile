@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    APP_IMAGE = "collector-b:${BUILD_NUMBER}"
+    APP_IMAGE = "collector-b:${env.BUILD_NUMBER}"
   }
 
   options {
@@ -22,11 +22,11 @@ pipeline {
         sh '''
           set -eu
 
-          # Env CI (pas de secrets réels)
+          # .env CI (pas de vrais secrets)
           cat > .env <<'EOF'
-DEBUG=False
 SECRET_KEY=ci-secret-key
-ALLOWED_HOSTS=localhost,127.0.0.1,web
+DEBUG=False
+ALLOWED_HOSTS=localhost,127.0.0.1
 CSRF_TRUSTED_ORIGINS=http://localhost:8000
 
 DB_NAME=collector
@@ -38,18 +38,13 @@ DB_PORT=3306
 REDIS_URL=redis://redis:6379/0
 EOF
 
-          # Override CI: on désactive les bind mounts (.:/app) et les ports,
-          # et on force "web/worker" à utiliser l'image buildée.
-          cat > docker-compose.ci.yml <<EOF
+          # CI override : on évite d’exposer des ports + on neutralise les bind mounts
+          cat > docker-compose.ci.yml <<'EOF'
 services:
   web:
-    image: ${APP_IMAGE}
-    build: null
-    volumes: []
     ports: []
+    volumes: []
   worker:
-    image: ${APP_IMAGE}
-    build: null
     volumes: []
 EOF
 
@@ -72,8 +67,8 @@ EOF
       steps {
         sh '''
           set -eu
-          docker build -t ${APP_IMAGE} .
-          docker image inspect ${APP_IMAGE} >/dev/null
+          docker build -t "${APP_IMAGE}" .
+          docker image inspect "${APP_IMAGE}" >/dev/null
         '''
       }
     }
@@ -83,25 +78,45 @@ EOF
         sh '''
           set -eu
 
-          # Attendre MySQL (healthcheck du compose utilise rootpass)
+          # Attendre MySQL
           for i in $(seq 1 40); do
             if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T db \
-                 mysqladmin ping -h 127.0.0.1 -uroot -prootpass --silent; then
+                mysqladmin ping -h 127.0.0.1 -uroot -prootpass --silent; then
               echo "MySQL is ready"
               break
             fi
-            echo "Waiting MySQL... ($i/40)"
+            echo "Waiting MySQL... (${i}/40)"
             sleep 2
           done
 
-          # Lancer migrations + tests depuis l'image (pas de bind mount)
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
-            -e DJANGO_SETTINGS_MODULE=config.settings \
-            web sh -lc "
-              cd /app &&
-              python manage.py migrate --noinput &&
+          # Récupérer le network du projet compose (pour que "db" et "redis" soient résolus)
+          DB_CID="$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -q db | head -n 1)"
+          if [ -z "$DB_CID" ]; then
+            echo "ERROR: DB container not found"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml ps || true
+            exit 2
+          fi
+
+          NET="$(docker inspect "$DB_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s\\n" $k}}{{end}}' | head -n 1)"
+          if [ -z "$NET" ]; then
+            echo "ERROR: Compose network not found"
+            docker inspect "$DB_CID" || true
+            exit 2
+          fi
+          echo "Using compose network: $NET"
+
+          # IMPORTANT: on n'utilise PAS `docker compose run web` (bind mounts cassés en Jenkins-in-Docker)
+          docker run --rm \
+            --network "$NET" \
+            --env-file .env \
+            "${APP_IMAGE}" \
+            sh -lc '
+              set -eu
+              cd /app
+              ls -la | head -n 50
+              python manage.py migrate --noinput
               python manage.py test -v 2
-            "
+            '
         '''
       }
     }
@@ -110,10 +125,10 @@ EOF
       steps {
         sh '''
           set -eu
-          # Non-bloquant: on veut que la CI passe, mais on garde le contrôle sécurité.
-          docker run --rm ${APP_IMAGE} sh -lc "
+          # non bloquant au début (tu pourras passer à exit 1 plus tard)
+          docker run --rm -v "$WORKSPACE:/src" -w /src python:3.12-slim sh -lc "
             pip install --no-cache-dir bandit >/dev/null &&
-            bandit -r /app -x */migrations/* -ll || true
+            bandit -r . -x */migrations/* -ll || true
           "
         '''
       }
@@ -123,11 +138,11 @@ EOF
       steps {
         sh '''
           set -eu
-          # Non-bloquant pour éviter de casser le pipeline au début
+          # non bloquant au début (tu pourras forcer HIGH/CRITICAL plus tard)
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image \
             --severity HIGH,CRITICAL \
             --exit-code 0 \
-            ${APP_IMAGE} || true
+            "${APP_IMAGE}" || true
         '''
       }
     }
@@ -137,18 +152,35 @@ EOF
         sh '''
           set -eu
 
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d web
+          DB_CID="$(docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -q db | head -n 1)"
+          NET="$(docker inspect "$DB_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s\\n" $k}}{{end}}' | head -n 1)"
+          echo "Using compose network: $NET"
 
-          # Test HTTP depuis un conteneur curl dans le network du compose
-          for i in $(seq 1 20); do
-            if docker run --rm --network projet-collab-ci_default curlimages/curl:8.5.0 \
-              -sSf http://web:8000/ >/dev/null; then
-              echo "HTTP OK"
-              break
-            fi
-            echo "Waiting HTTP... ($i/20)"
-            sleep 2
-          done
+          # Lancer l’app (sans ports, on teste en interne via curl)
+          CID="$(docker run -d --rm \
+            --name "collectorb-smoke-${BUILD_NUMBER}" \
+            --network "$NET" \
+            --env-file .env \
+            "${APP_IMAGE}" \
+            sh -lc 'cd /app && python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000'
+          )"
+
+          # Attendre que ça réponde (depuis un conteneur dans le même network)
+          docker run --rm --network "$NET" curlimages/curl:8.6.0 sh -lc '
+            set -eu
+            for i in $(seq 1 20); do
+              if curl -fsS http://collectorb-smoke-'${BUILD_NUMBER}':8000/ >/dev/null; then
+                echo "Smoke OK"
+                exit 0
+              fi
+              echo "Waiting app... (${i}/20)"
+              sleep 2
+            done
+            echo "Smoke FAILED"
+            exit 1
+          '
+
+          docker stop "$CID" >/dev/null 2>&1 || true
         '''
       }
     }
@@ -158,9 +190,9 @@ EOF
     always {
       sh '''
         set +e
-        docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
-        rm -f docker-compose.ci.yml .env
-        docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
+        rm -f docker-compose.ci.yml .env || true
+        docker image rm -f "${APP_IMAGE}" >/dev/null 2>&1 || true
       '''
     }
   }
