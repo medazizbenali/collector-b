@@ -22,7 +22,7 @@ pipeline {
         sh '''
           set -eu
 
-          # .env minimal pour CI (pas de secrets réels)
+          # .env minimal pour CI
           cat > .env <<'EOF'
 SECRET_KEY=ci-secret-key
 DEBUG=False
@@ -56,15 +56,31 @@ EOF
         sh '''
           set -eu
 
+          # Détecter le fichier compose principal
+          if [ -f docker-compose.yml ]; then
+            BASE_COMPOSE="docker-compose.yml"
+          elif [ -f docker-compose.yaml ]; then
+            BASE_COMPOSE="docker-compose.yaml"
+          else
+            echo "No docker-compose file found:"
+            ls -la
+            exit 1
+          fi
+
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:$WORKSPACE" \
-              -w "$WORKSPACE" \
+              -v "$WORKSPACE:/work" \
+              -w /work \
               docker/compose:latest "$@"
           }
 
-          compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          # Debug utile si ça recasse
+          echo "Workspace is: $WORKSPACE"
+          ls -la
+          compose version
+
+          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml up -d db redis
           compose ps
         '''
       }
@@ -75,23 +91,30 @@ EOF
         sh '''
           set -eu
 
+          if [ -f docker-compose.yml ]; then
+            BASE_COMPOSE="docker-compose.yml"
+          elif [ -f docker-compose.yaml ]; then
+            BASE_COMPOSE="docker-compose.yaml"
+          else
+            echo "No docker-compose file found:"
+            ls -la
+            exit 1
+          fi
+
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:$WORKSPACE" \
-              -w "$WORKSPACE" \
+              -v "$WORKSPACE:/work" \
+              -w /work \
               docker/compose:latest "$@"
           }
 
-          # Build image depuis Dockerfile
           docker build -t ${APP_IMAGE} .
 
-          # (Optionnel) attendre un peu que MySQL démarre
-          # (Si ça bloque encore ensuite, on met un vrai wait-for-db)
+          # Petite attente (si MySQL n’est pas prêt on ajoutera un wait-for-db)
           sleep 3
 
-          # Migrations + tests dans le service web
-          compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -143,15 +166,24 @@ EOF
         sh '''
           set -eu
 
+          if [ -f docker-compose.yml ]; then
+            BASE_COMPOSE="docker-compose.yml"
+          elif [ -f docker-compose.yaml ]; then
+            BASE_COMPOSE="docker-compose.yaml"
+          else
+            echo "No docker-compose file found:"
+            ls -la
+            exit 1
+          fi
+
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:$WORKSPACE" \
-              -w "$WORKSPACE" \
+              -v "$WORKSPACE:/work" \
+              -w /work \
               docker/compose:latest "$@"
           }
 
-          # Override compose pour démarrer web depuis l'image buildée
           cat > docker-compose.image.yml <<EOF
 services:
   web:
@@ -163,15 +195,13 @@ services:
       "
 EOF
 
-          compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
           compose ps
 
-          # Smoke test HTTP via Python (dans le conteneur web)
           compose exec -T web python - <<'PY'
 import urllib.request, sys, time
 
 url = "http://localhost:8000/"
-
 for attempt in range(1, 11):
     try:
         with urllib.request.urlopen(url, timeout=5) as r:
@@ -197,15 +227,23 @@ PY
       sh '''
         set +e
 
+        if [ -f docker-compose.yml ]; then
+          BASE_COMPOSE="docker-compose.yml"
+        elif [ -f docker-compose.yaml ]; then
+          BASE_COMPOSE="docker-compose.yaml"
+        else
+          BASE_COMPOSE="docker-compose.yml"
+        fi
+
         compose() {
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$WORKSPACE:$WORKSPACE" \
-            -w "$WORKSPACE" \
+            -v "$WORKSPACE:/work" \
+            -w /work \
             docker/compose:latest "$@"
         }
 
-        compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml down -v
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
