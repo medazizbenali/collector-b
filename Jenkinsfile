@@ -3,11 +3,13 @@ pipeline {
 
   environment {
     APP_IMAGE = "collector-b:${env.BUILD_NUMBER}"
+    // Utilise Docker Compose via un conteneur (car docker-compose / docker compose n'est pas dispo dans le conteneur Jenkins)
+    COMPOSE = "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD docker/compose:2.29.2"
   }
 
   options {
-  timestamps()
-}
+    timestamps()
+  }
 
   stages {
 
@@ -55,8 +57,8 @@ EOF
       steps {
         sh '''
           set -eu
-          docker-compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
-          docker-compose ps
+          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          ${COMPOSE} ps
         '''
       }
     }
@@ -66,12 +68,11 @@ EOF
         sh '''
           set -eu
 
-          # Build image "web" depuis Dockerfile pour exécuter tests dans un environnement propre
+          # Build image depuis Dockerfile
           docker build -t ${APP_IMAGE} .
 
-          # Lancer migrations + tests dans un conteneur relié au réseau compose
-          # On utilise le réseau du projet docker-compose automatiquement (service name db/redis)
-          docker-compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          # Lancer migrations + tests dans le service web (réseau compose => db/redis accessibles)
+          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -136,22 +137,29 @@ services:
       "
 EOF
 
-          docker-compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
-          docker-compose ps
+          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          ${COMPOSE} ps
 
-          # Smoke test HTTP via Python (pas besoin de curl)
-          docker-compose exec -T web python - <<'PY'
-import urllib.request, sys
+          # Smoke test HTTP via Python (dans le conteneur web)
+          ${COMPOSE} exec -T web python - <<'PY'
+import urllib.request, sys, time
+
 url = "http://localhost:8000/"
-try:
-    with urllib.request.urlopen(url, timeout=10) as r:
-        code = r.getcode()
-        print("HTTP", code)
-        if code >= 400:
+
+for attempt in range(1, 11):
+    try:
+        with urllib.request.urlopen(url, timeout=5) as r:
+            code = r.getcode()
+            print("HTTP", code)
+            if code < 400:
+                sys.exit(0)
             sys.exit(1)
-except Exception as e:
-    print("Smoke test failed:", e)
-    sys.exit(1)
+    except Exception as e:
+        print(f"Attempt {attempt}/10 failed:", e)
+        time.sleep(2)
+
+print("Smoke test failed after retries")
+sys.exit(1)
 PY
         '''
       }
@@ -162,7 +170,7 @@ PY
     always {
       sh '''
         set +e
-        docker-compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml down -v
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
