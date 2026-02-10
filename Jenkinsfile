@@ -55,8 +55,8 @@ EOF
       steps {
         sh '''
           set -eu
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
-          docker compose ps
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          docker-compose ps
         '''
       }
     }
@@ -70,8 +70,8 @@ EOF
           docker build -t ${APP_IMAGE} .
 
           # Lancer migrations + tests dans un conteneur relié au réseau compose
-          # On utilise le réseau du projet docker compose automatiquement (service name db/redis)
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          # On utilise le réseau du projet docker-compose automatiquement (service name db/redis)
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -136,11 +136,11 @@ services:
       "
 EOF
 
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
-          docker compose ps
+          docker-compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          docker-compose ps
 
           # Smoke test HTTP via Python (pas besoin de curl)
-          docker compose exec -T web python - <<'PY'
+          docker-compose exec -T web python - <<'PY'
 import urllib.request, sys
 url = "http://localhost:8000/"
 try:
@@ -162,7 +162,7 @@ PY
     always {
       sh '''
         set +e
-        docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+        docker-compose -f docker-compose.yml -f docker-compose.ci.yml down -v
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
