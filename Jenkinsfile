@@ -37,7 +37,7 @@ DB_PORT=3306
 REDIS_URL=redis://redis:6379/0
 EOF
 
-          # Override CI: pas d'exposition de ports, pas de bind mounts
+          # Override CI: pas de ports publics, pas de bind mounts
           cat > docker-compose.ci.yml <<'EOF'
 services:
   web:
@@ -76,9 +76,10 @@ EOF
         sh '''
           set -eu
 
-          # Attendre MySQL (simple)
+          # Attendre MySQL
           for i in $(seq 1 30); do
-            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T db mysqladmin ping -h 127.0.0.1 -uroot --silent 2>/dev/null; then
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T db \
+              mysqladmin ping -h 127.0.0.1 -uroot --silent 2>/dev/null; then
               echo "MySQL is ready"
               break
             fi
@@ -86,7 +87,15 @@ EOF
             sleep 2
           done
 
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          # IMPORTANT: empêcher docker compose de rebuild (sinon buildx requis)
+          cat > docker-compose.test.yml <<EOF
+services:
+  web:
+    image: ${APP_IMAGE}
+    build: null
+EOF
+
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.test.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -138,10 +147,12 @@ EOF
         sh '''
           set -eu
 
+          # Force web à utiliser l'image buildée
           cat > docker-compose.image.yml <<EOF
 services:
   web:
     image: ${APP_IMAGE}
+    build: null
     command: >
       sh -c "
       python manage.py migrate --noinput &&
@@ -150,8 +161,9 @@ services:
 EOF
 
           docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          docker compose ps
 
-          # Smoke via python dans web (localhost = conteneur web)
+          # Smoke test HTTP depuis le conteneur web (localhost = conteneur web)
           docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml exec -T web python - <<'PY'
 import urllib.request, sys, time
 
@@ -181,7 +193,7 @@ PY
       sh '''
         set +e
         docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
-        rm -f docker-compose.image.yml docker-compose.ci.yml .env || true
+        rm -f docker-compose.image.yml docker-compose.test.yml docker-compose.ci.yml .env || true
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
