@@ -4,7 +4,8 @@ pipeline {
   environment {
     APP_IMAGE = "collector-b:${env.BUILD_NUMBER}"
     // Utilise Docker Compose via un conteneur (car docker-compose / docker compose n'est pas dispo dans le conteneur Jenkins)
-    COMPOSE = "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD docker/compose:2.29.2"
+    COMPOSE = "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD docker/compose:latest"
+
   }
 
   options {
