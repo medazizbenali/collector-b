@@ -1,0 +1,1 @@
+CI notes: Jenkins builds image and runs tests from the image (no bind mount).\n
