@@ -3,9 +3,6 @@ pipeline {
 
   environment {
     APP_IMAGE = "collector-b:${env.BUILD_NUMBER}"
-    // Utilise Docker Compose via un conteneur (car docker-compose / docker compose n'est pas dispo dans le conteneur Jenkins)
-    COMPOSE = "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD docker/compose:latest"
-
   }
 
   options {
@@ -58,8 +55,10 @@ EOF
       steps {
         sh '''
           set -eu
-          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
-          ${COMPOSE} ps
+          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
+
+          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml up -d db redis
+          $COMPOSE ps
         '''
       }
     }
@@ -68,12 +67,13 @@ EOF
       steps {
         sh '''
           set -eu
+          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
 
           # Build image depuis Dockerfile
           docker build -t ${APP_IMAGE} .
 
-          # Lancer migrations + tests dans le service web (réseau compose => db/redis accessibles)
-          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml run --rm \
+          # Migrations + tests dans le service web (réseau compose => db/redis accessibles)
+          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml run --rm \
             -e DJANGO_SETTINGS_MODULE=config.settings \
             web sh -lc "
               python manage.py migrate --noinput &&
@@ -87,8 +87,7 @@ EOF
       steps {
         sh '''
           set -eu
-          # Bandit dans un container pour éviter d’installer sur Jenkins
-          docker run --rm -v "$PWD:/src" -w /src python:3.12-slim sh -lc "
+          docker run --rm -v "$WORKSPACE:/src" -w /src python:3.12-slim sh -lc "
             pip install --no-cache-dir bandit &&
             bandit -r . -x */migrations/* -ll
           "
@@ -100,7 +99,7 @@ EOF
       steps {
         sh '''
           set -eu
-          docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:latest fs \
+          docker run --rm -v "$WORKSPACE:/work" -w /work aquasec/trivy:latest fs \
             --scanners vuln,secret,config \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
@@ -125,8 +124,9 @@ EOF
       steps {
         sh '''
           set -eu
+          COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
 
-          # Override compose pour démarrer web depuis l'image buildée (pas "build: .")
+          # Override compose pour démarrer web depuis l'image buildée
           cat > docker-compose.image.yml <<EOF
 services:
   web:
@@ -138,11 +138,11 @@ services:
       "
 EOF
 
-          ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
-          ${COMPOSE} ps
+          $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.image.yml up -d web
+          $COMPOSE ps
 
           # Smoke test HTTP via Python (dans le conteneur web)
-          ${COMPOSE} exec -T web python - <<'PY'
+          $COMPOSE exec -T web python - <<'PY'
 import urllib.request, sys, time
 
 url = "http://localhost:8000/"
@@ -171,7 +171,9 @@ PY
     always {
       sh '''
         set +e
-        ${COMPOSE} -f docker-compose.yml -f docker-compose.ci.yml down -v
+        COMPOSE="docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v \\"$WORKSPACE\\":\\"$WORKSPACE\\" -w \\"$WORKSPACE\\" docker/compose:latest"
+
+        $COMPOSE -f docker-compose.yml -f docker-compose.ci.yml down -v
         docker image rm -f ${APP_IMAGE} >/dev/null 2>&1 || true
       '''
     }
