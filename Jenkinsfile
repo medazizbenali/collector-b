@@ -6,9 +6,8 @@ pipeline {
   }
 
   options {
-    timestamps()
-    ansiColor('xterm')
-  }
+  timestamps()
+}
 
   stages {
 
