@@ -22,7 +22,6 @@ pipeline {
         sh '''
           set -eu
 
-          # .env minimal pour CI
           cat > .env <<'EOF'
 SECRET_KEY=ci-secret-key
 DEBUG=False
@@ -38,7 +37,6 @@ DB_PORT=3306
 REDIS_URL=redis://redis:6379/0
 EOF
 
-          # Override compose pour CI: pas de ports publics, pas de bind mount source
           cat > docker-compose.ci.yml <<'EOF'
 services:
   web:
@@ -56,30 +54,32 @@ EOF
         sh '''
           set -eu
 
-          # Détecter le fichier compose principal
-          if [ -f docker-compose.yml ]; then
+          # IMPORTANT: workspace dans Jenkins conteneur != chemin sur la VM
+          WS_BASE="$(basename "$WORKSPACE")"
+          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+          echo "Container WORKSPACE: $WORKSPACE"
+          echo "Host workspace:      $HOST_WS"
+          ls -la "$HOST_WS" | sed -n '1,120p'
+
+          if [ -f "$HOST_WS/docker-compose.yml" ]; then
             BASE_COMPOSE="docker-compose.yml"
-          elif [ -f docker-compose.yaml ]; then
+          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
             BASE_COMPOSE="docker-compose.yaml"
           else
-            echo "No docker-compose file found:"
-            ls -la
+            echo "No docker-compose file found in HOST_WS"
             exit 1
           fi
 
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:/work" \
+              -v "$HOST_WS:/work" \
               -w /work \
               docker/compose:latest "$@"
           }
 
-          # Debug utile si ça recasse
-          echo "Workspace is: $WORKSPACE"
-          ls -la
           compose version
-
           compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml up -d db redis
           compose ps
         '''
@@ -91,27 +91,29 @@ EOF
         sh '''
           set -eu
 
-          if [ -f docker-compose.yml ]; then
+          WS_BASE="$(basename "$WORKSPACE")"
+          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+          if [ -f "$HOST_WS/docker-compose.yml" ]; then
             BASE_COMPOSE="docker-compose.yml"
-          elif [ -f docker-compose.yaml ]; then
+          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
             BASE_COMPOSE="docker-compose.yaml"
           else
-            echo "No docker-compose file found:"
-            ls -la
+            echo "No docker-compose file found in HOST_WS"
             exit 1
           fi
 
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:/work" \
+              -v "$HOST_WS:/work" \
               -w /work \
               docker/compose:latest "$@"
           }
 
           docker build -t ${APP_IMAGE} .
 
-          # Petite attente (si MySQL n’est pas prêt on ajoutera un wait-for-db)
+          # Petite attente (si MySQL pas prêt on ajoutera un wait-for-db)
           sleep 3
 
           compose -f "$BASE_COMPOSE" -f docker-compose.ci.yml run --rm \
@@ -128,7 +130,10 @@ EOF
       steps {
         sh '''
           set -eu
-          docker run --rm -v "$WORKSPACE:/src" -w /src python:3.12-slim sh -lc "
+          WS_BASE="$(basename "$WORKSPACE")"
+          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+          docker run --rm -v "$HOST_WS:/src" -w /src python:3.12-slim sh -lc "
             pip install --no-cache-dir bandit &&
             bandit -r . -x */migrations/* -ll
           "
@@ -140,7 +145,10 @@ EOF
       steps {
         sh '''
           set -eu
-          docker run --rm -v "$WORKSPACE:/work" -w /work aquasec/trivy:latest fs \
+          WS_BASE="$(basename "$WORKSPACE")"
+          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+          docker run --rm -v "$HOST_WS:/work" -w /work aquasec/trivy:latest fs \
             --scanners vuln,secret,config \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
@@ -166,20 +174,22 @@ EOF
         sh '''
           set -eu
 
-          if [ -f docker-compose.yml ]; then
+          WS_BASE="$(basename "$WORKSPACE")"
+          HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+          if [ -f "$HOST_WS/docker-compose.yml" ]; then
             BASE_COMPOSE="docker-compose.yml"
-          elif [ -f docker-compose.yaml ]; then
+          elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
             BASE_COMPOSE="docker-compose.yaml"
           else
-            echo "No docker-compose file found:"
-            ls -la
+            echo "No docker-compose file found in HOST_WS"
             exit 1
           fi
 
           compose() {
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              -v "$WORKSPACE:/work" \
+              -v "$HOST_WS:/work" \
               -w /work \
               docker/compose:latest "$@"
           }
@@ -227,9 +237,12 @@ PY
       sh '''
         set +e
 
-        if [ -f docker-compose.yml ]; then
+        WS_BASE="$(basename "$WORKSPACE")"
+        HOST_WS="/var/lib/docker/volumes/jenkins_home/_data/workspace/${WS_BASE}"
+
+        if [ -f "$HOST_WS/docker-compose.yml" ]; then
           BASE_COMPOSE="docker-compose.yml"
-        elif [ -f docker-compose.yaml ]; then
+        elif [ -f "$HOST_WS/docker-compose.yaml" ]; then
           BASE_COMPOSE="docker-compose.yaml"
         else
           BASE_COMPOSE="docker-compose.yml"
@@ -238,7 +251,7 @@ PY
         compose() {
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$WORKSPACE:/work" \
+            -v "$HOST_WS:/work" \
             -w /work \
             docker/compose:latest "$@"
         }
