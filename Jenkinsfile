@@ -95,21 +95,25 @@ services:
     build: null
 EOF
 
-      docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.test.yml run --rm \
-  -e DJANGO_SETTINGS_MODULE=config.settings \
-  web sh -lc '
-    set -eu
-    MP="$(find / -maxdepth 4 -name manage.py 2>/dev/null | head -n 1 || true)"
-    if [ -z "$MP" ]; then
-      echo "manage.py not found in container. Listing common dirs:"
-      ls -la / /app /code /src /usr/src 2>/dev/null || true
-      exit 2
-    fi
-    echo "Found manage.py at: $MP"
-    cd "$(dirname "$MP")"
-    python manage.py migrate --noinput
-    python manage.py test -v 2
-  '
+          # IMPORTANT: ne pas dépendre de /app, on cherche manage.py dans le conteneur
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.test.yml run --rm \
+            -e DJANGO_SETTINGS_MODULE=config.settings \
+            web sh -lc '
+              set -eu
+              MP="$(find / -maxdepth 4 -name manage.py 2>/dev/null | head -n 1 || true)"
+              if [ -z "$MP" ]; then
+                echo "manage.py not found in container. Listing common dirs:"
+                ls -la / /app /code /src /usr/src 2>/dev/null || true
+                exit 2
+              fi
+              echo "Found manage.py at: $MP"
+              cd "$(dirname "$MP")"
+              python manage.py migrate --noinput
+              python manage.py test -v 2
+            '
+        '''
+      }
+    }
 
     stage('Security (Bandit)') {
       steps {
@@ -153,14 +157,17 @@ EOF
         sh '''
           set -eu
 
-          # Force web à utiliser l'image buildée
+          # Force web à utiliser l'image buildée (pas de buildx)
           cat > docker-compose.image.yml <<EOF
 services:
   web:
     image: ${APP_IMAGE}
     build: null
     command: >
-      sh -c "
+      sh -lc "
+      MP=\\$(find / -maxdepth 4 -name manage.py 2>/dev/null | head -n 1 || true);
+      if [ -z \\\"\\$MP\\\" ]; then echo manage.py not found; exit 2; fi;
+      cd \\$(dirname \\\"\\$MP\\\");
       python manage.py migrate --noinput &&
       python manage.py runserver 0.0.0.0:8000
       "
